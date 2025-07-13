@@ -31,7 +31,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/dimastofff/aesgcm"
+	"github.com/dimastofff/aes-gcm-go"
 )
 
 func main() {
