@@ -121,6 +121,61 @@ func assertDecryptFailure(t *testing.T, c aesgcm.Cipher, raw []byte) {
 	}
 }
 
+func TestEncryptOwnsOutput(t *testing.T) {
+	c := newCipher(t, randomKey(t))
+	plain := strings.Repeat("original plaintext\x00\xff", 32)
+	beforePlain := append([]byte(nil), plain...)
+	first, err := c.Encrypt(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal([]byte(plain), beforePlain) {
+		t.Fatal("Encrypt modified its plaintext string")
+	}
+	beforeFirst := append([]byte(nil), first...)
+	const secondPlain = "a shorter, independent message"
+	second, err := c.Encrypt(secondPlain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, beforeFirst) {
+		t.Fatal("a later Encrypt modified an earlier result")
+	}
+	for i := range first {
+		first[i] ^= 0xff
+	}
+	got, err := c.Decrypt(second)
+	if err != nil || got != secondPlain {
+		t.Fatalf("modifying one result affected another: %v; plaintext matches: %t", err, got == secondPlain)
+	}
+}
+
+func TestDecryptOwnsPlaintext(t *testing.T) {
+	c := newCipher(t, randomKey(t))
+	const want = "retained plaintext\x00\xff"
+	raw, err := c.Encrypt(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.Decrypt(raw)
+	if err != nil || got != want {
+		t.Fatalf("Decrypt: %v; plaintext matches: %t", err, got == want)
+	}
+	for i := range raw {
+		raw[i] ^= 0xff
+	}
+	later, err := c.Encrypt("later plaintext")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Decrypt(later); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatal("ciphertext mutation or later operations changed retained plaintext")
+	}
+}
+
 func TestDecryptRejectsMalformedCiphertexts(t *testing.T) {
 	c := newCipher(t, randomKey(t))
 	raw, err := c.Encrypt("a representative message spanning several AES blocks\x00\xff")
@@ -340,9 +395,23 @@ func TestConcurrentCipher(t *testing.T) {
 
 // Keep benchmark results observable, including allocations for returned values.
 var (
+	benchmarkCipher     aesgcm.Cipher
 	benchmarkCiphertext []byte
 	benchmarkPlaintext  string
 )
+
+func BenchmarkNew(b *testing.B) {
+	key := base64.StdEncoding.EncodeToString(randomKey(b))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var err error
+		benchmarkCipher, err = aesgcm.New(key)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
 
 func BenchmarkEncrypt(b *testing.B) {
 	for _, size := range []int{0, 64, 1024, 64 * 1024} {

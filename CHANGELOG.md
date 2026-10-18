@@ -5,6 +5,8 @@
 - Add security reporting and contribution guidance, plus an executable usage example.
 - Update CI for supported Go releases and retain a separate Go 1.13 compatibility check; add race, coverage, fuzz, and scheduled vulnerability checks.
 - Add known-answer, interoperability, concurrent-use, and error-contract tests; expand allocation-reporting benchmarks.
+- Remove the redundant raw-key field and constructor copy; encrypt in a single operation-local buffer.
+- Add output-ownership regression tests and a constructor benchmark.
 - Preserve the public API, Go 1.13 source compatibility, and existing ciphertext format.
 
 ## v1.1.0 (2025-07-14)

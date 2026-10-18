@@ -49,7 +49,6 @@ type Cipher interface {
 
 // gcmCipher is a concrete implementation of the Cipher interface using AES-256-GCM.
 type gcmCipher struct {
-	key  []byte
 	aead cipher.AEAD
 }
 
@@ -71,10 +70,7 @@ func New(b64Key string) (Cipher, error) {
 		return nil, fmt.Errorf("%w: key must be 32 bytes, got %d", ErrKeyInvalid, len(key))
 	}
 
-	k := make([]byte, 32)
-	copy(k, key)
-
-	block, err := aes.NewCipher(k)
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrKeyInvalid, err)
 	}
@@ -84,19 +80,24 @@ func New(b64Key string) (Cipher, error) {
 		return nil, fmt.Errorf("%w: %v", ErrKeyInvalid, err)
 	}
 
-	return &gcmCipher{key: k, aead: aead}, nil
+	return &gcmCipher{aead: aead}, nil
 }
 
 // Encrypt encrypts the given plaintext string using AES-256-GCM.
 // Returns the resulting ciphertext, including a prepended nonce.
 func (c *gcmCipher) Encrypt(plain string) ([]byte, error) {
-	nonce := make([]byte, c.aead.NonceSize())
+	ns := c.aead.NonceSize()
+	// Reserve one buffer for the nonce, plaintext, and authentication tag.
+	raw := make([]byte, ns+len(plain), ns+len(plain)+c.aead.Overhead())
+	nonce := raw[:ns]
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, fmt.Errorf("%w: nonce: %v", ErrEncrypt, err)
 	}
 
-	// Seal appends the encrypted data to nonce and returns it.
-	return c.aead.Seal(nonce, nonce, []byte(plain), nil), nil
+	// The appended output starts exactly where plaintext does, allowing GCM to
+	// encrypt in place while leaving the nonce prefix and caller's string intact.
+	copy(raw[ns:], plain)
+	return c.aead.Seal(raw[:ns], nonce, raw[ns:], nil), nil
 }
 
 // Decrypt decrypts the given byte slice using AES-256-GCM.
