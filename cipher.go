@@ -1,5 +1,11 @@
-// Package aesgcm offers minimalistic AES-256-GCM authenticated
-// encryption with constant-memory, goroutine-safe primitives.
+// Package aesgcm provides AES-256-GCM authenticated encryption for whole
+// messages using only the Go standard library. A Cipher can be shared by
+// concurrent goroutines. Each operation allocates memory proportional to the
+// message size; this package does not provide streaming encryption.
+//
+// Ciphertexts contain a 12-byte random nonce, followed by the encrypted message
+// and a 16-byte authentication tag. Associated data, key rotation, and replay
+// protection are not provided by this API.
 package aesgcm
 
 import (
@@ -24,11 +30,20 @@ var (
 )
 
 // Cipher defines the interface for high-level AES-256-GCM encryption and decryption.
+// Instances returned by New can be used concurrently. Callers must not modify
+// a ciphertext buffer while Decrypt is reading it.
 type Cipher interface {
-	// Encrypt takes a plaintext string and returns the encrypted data as a byte slice.
+	// Encrypt accepts any string, including empty strings and arbitrary bytes.
+	// The binary result is len(plain)+28 bytes long and includes the random nonce
+	// and authentication tag. On failure it returns nil and wraps ErrEncrypt.
+	// A key must not be used to encrypt more than 2^32 messages in total across
+	// all instances and processes, to limit the risk of random nonce collisions.
 	Encrypt(plain string) ([]byte, error)
 
-	// Decrypt takes a byte slice produced by Encrypt and returns the original plaintext string.
+	// Decrypt authenticates and decrypts a ciphertext produced by Encrypt without
+	// modifying raw. On failure it returns an empty string and wraps ErrDecrypt.
+	// Successful decryption does not establish freshness or an external context
+	// such as the user or record to which the message belongs.
 	Decrypt(raw []byte) (string, error)
 }
 
@@ -42,7 +57,11 @@ type gcmCipher struct {
 var _ Cipher = (*gcmCipher)(nil)
 
 // New creates a new AES-256-GCM cipher using a base64-encoded 32-byte secret key.
-// Returns an instance of Cipher or an error if the key is invalid.
+// The key must be generated from a cryptographically secure random source and
+// encoded with base64.StdEncoding. Base64 is an encoding, not a password KDF.
+// Invalid Base64 or a decoded length other than 32 bytes returns an error
+// wrapping ErrKeyInvalid. Creating another Cipher does not reset a key's
+// lifetime encryption limit.
 func New(b64Key string) (Cipher, error) {
 	key, err := base64.StdEncoding.DecodeString(b64Key)
 	if err != nil {

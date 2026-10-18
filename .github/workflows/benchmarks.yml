@@ -1,0 +1,48 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Benchmark snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - name: Record benchmark environment
+        run: |
+          {
+            go version
+            go env GOOS GOARCH
+            uname -a
+            lscpu
+            printf 'commit=%s\n' "$GITHUB_SHA"
+          } > benchmark-environment.txt
+      # Hosted runners vary: preserve samples for comparison, without a
+      # percentage-based pass/fail threshold.
+      - name: Run benchmarks
+        shell: bash
+        run: go test -run='^$' -bench=. -benchmem -count=5 ./... | tee benchmarks.txt
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: benchmarks-${{ github.sha }}
+          path: |
+            benchmarks.txt
+            benchmark-environment.txt
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,60 @@
+name: Maintenance
+
+on:
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Extended fuzz tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - name: Fuzz decryption (5 minutes)
+        run: go test -run='^$' -fuzz='^FuzzDecrypt$' -fuzztime=5m -parallel=2 ./...
+      - name: Fuzz round trips (5 minutes)
+        run: go test -run='^$' -fuzz='^FuzzRoundTrip$' -fuzztime=5m -parallel=2 ./...
+      - name: Upload failing fuzz inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-failures-extended
+          path: testdata/fuzz
+          if-no-files-found: ignore
+          retention-days: 30
+
+  vulnerabilities:
+    name: Known vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      # Keep this tool outside the library's Go 1.13 module. Review the pin
+      # when updating CI tools: https://go.googlesource.com/vuln/+refs
+      - name: Install govulncheck
+        env:
+          GOBIN: ${{ runner.temp }}/bin
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - name: Check known vulnerabilities
+        run: '"$RUNNER_TEMP/bin/govulncheck" ./...'
