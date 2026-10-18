@@ -1,6 +1,7 @@
 # Changelog
 
-## Unreleased
+## v1.1.1 (2026-10-18)
+
 - Correct the memory-use description and document the v1 ciphertext format, key-use limits, and application responsibilities.
 - Add security reporting and contribution guidance, plus an executable usage example.
 - Update CI for supported Go releases and retain a separate Go 1.13 compatibility check; add race, coverage, fuzz, and scheduled vulnerability checks.
